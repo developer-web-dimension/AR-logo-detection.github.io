@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Object Tracking with A-Frame</title>
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <style>
+        html, body { margin: 0; height: 100%; width: 100%; overflow: hidden; }
+        a-scene { width: 100vw; height: 100vh; }
+        #video-feed {
+            position: absolute; bottom: 5%; right: 5%;
+            width: 40vw; height: 30vh;
+        }
+        @media (max-width: 768px) {
+            #video-feed { width: 90vw; height: 40vh; bottom: 2%; right: 5%; }
+        }
+        @media (min-width: 769px) and (max-width: 1024px) {
+            #video-feed { width: 60vw; height: 35vh; }
+        }
+    </style>
+</head>
+<body>
+    <a-scene>
+        <a-camera fov="60" look-controls="enabled: false"></a-camera>
+        <a-light type="ambient" color="#ffffff"></a-light>
+        <a-light type="directional" position="-1 2 1" intensity="1" color="#ffffff"></a-light>
+        
+        <a-box id="tracked-box" visible="false" position="0 0 0" rotation="0 45 0" scale="1.5 1.5 1.5" material="src: #myImage; color: #FFF"></a-box>
+        
+        <a-plane id="video-feed-plane" width="16" height="9" position="0 3 -5" material="src: #video-texture;"></a-plane>
+        
+        <a-assets>
+            <img id="myImage" src="./WebD_texture.jpg"/>
+           
+            <video id="video-texture" autoplay playsinline></video>
+        </a-assets>
+    </a-scene>
+
+    <script>
+        // const socket = io('http://localhost:8000');
+        const socket = io('https://image-target.dbaego.com');
+        const videoElement = document.getElementById('video-texture');
+        const box = document.getElementById('tracked-box');
+
+        let lastPosition = { x: 0, y: 0, z: 0 };
+        let lastUpdateTime = Date.now();
+        let zValues = [];
+        const zWindowMin = -5;
+        const zWindowMax = 0;
+        let dataTimeout = null; // Timeout variable to hide the box
+
+        // Access the user's camera and show the video feed
+        navigator.mediaDevices.getUserMedia({ 
+            video:{ 
+            facingMode: { ideal: "environment" },  // Try to use the back camera
+            width: 640, 
+            height: 480 
+        } })
+            .then(stream => {
+                videoElement.srcObject = stream;
+                videoElement.play();
+                requestAnimationFrame(sendFrame);  // Send the video frames to the backend
+            })
+            .catch(error => console.error("Error accessing camera: ", error));
+
+        // Capture the video frame and send it to the backend every 250ms
+        function sendFrame() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;    
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            const frame = canvas.toDataURL('image/jpeg', 0.6);
+            socket.emit('video_frame', { frame });  // Send frame to backend
+            setTimeout(() => requestAnimationFrame(sendFrame), 150);
+        }
+
+        // Calculate the average z-value for smoothing
+        function getAverageZ() {
+            return zValues.length ? zValues.reduce((a, b) => a + b, 0) / zValues.length : 0;
+        }
+
+        // Receive updated coordinates for the box from the backend
+        socket.on('update_coordinates', function(data) {
+            const frameWidth = 640;
+            const frameHeight = 480;
+
+            if (data.x !== null && data.y !== null && data.z !== null) {
+                const x = (data.x / frameWidth) * 10 - 5;
+                const y = -(data.y / frameHeight) * 10 + 8;
+                let z = (data.z * -1) / 10;
+
+                // Smoothing z-value if it's outside the window
+                if (z < zWindowMin || z > zWindowMax) {
+                    z = getAverageZ();
+                } else {
+                    zValues.push(z);
+                    if (zValues.length > 5) zValues.shift();
+                }
+                console.log(`Position: ${data.x} ${data.y} ${data.z}`);
+
+                if (z > 65 && z< 10) {
+                    box.setAttribute('visible', false);
+                } else {
+                    console.log(`Position: ${data.x} ${data.y} ${data.z}`);
+                    lastPosition = { x, y, z };
+                    box.setAttribute('position', `${x} ${y} ${z}`);
+                    box.setAttribute('visible', true);
+                }
+
+                // Update the box position
+                lastPosition = { x, y, z };
+                box.setAttribute('position', `${x} ${y} ${z}`);
+                box.setAttribute('visible', true);
+
+                // Clear the timeout when new valid coordinates are received
+                clearTimeout(dataTimeout);
+
+                // Update lastUpdateTime
+                lastUpdateTime = Date.now();
+            }
+
+            // Start the timeout to hide the box if no updates are received for a long time
+            dataTimeout = setTimeout(() => {
+                box.setAttribute('visible', false);
+                lastPosition = { x: null, y: null, z: null };  // Reset last position when hiding
+            }, 300);  // 1 seconds timeout to hide the box
+        });
+        
+
+        // Start the video stream when the window loads
+        window.onload = () => socket.emit('start_stream');
+    </script>
+</body>
+</html>
+
+image-target.dbaego.com
