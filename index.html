@@ -5,25 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AR Object Tracking with A-Frame</title>
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <!-- <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script> -->
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+
     <style>
-        html, body { margin: 0; height: 100%; width: 100%; overflow: hidden; }
-        a-scene { width: 100vw; height: 100vh; }
+        html, body { 
+            margin: 0; 
+            height: 100%; 
+            width: 100%; 
+            overflow: hidden; 
+        }
+        a-scene { 
+            width: 100vw; 
+            height: 100vh; 
+        }
         #video-feed {
-            position: absolute; bottom: 5%; right: 5%;
-            width: 40vw; height: 30vh;
+            position: absolute;
+            bottom: 5%;
+            right: 5%;
+            width: 40vw; 
+            height: 30vh;
+            object-fit: cover;
         }
+
+        /* Responsive styles */
         @media (max-width: 768px) {
-            #video-feed { width: 90vw; height: 40vh; bottom: 2%; right: 5%; }
+            #video-feed { 
+                width: 90vw; 
+                height: 40vh; 
+                bottom: 2%; 
+                right: 2%; 
+            }
         }
+        
         @media (min-width: 769px) and (max-width: 1024px) {
-            #video-feed { width: 60vw; height: 35vh; }
+            #video-feed { 
+                width: 60vw; 
+                height: 35vh; 
+            }
+        }
+
+        @media (max-width: 480px) {
+            #video-feed { 
+                width: 95vw;
+                height: 45vh;
+                bottom: 2%;
+                right: 2%;
+            }
+        }
+
+        /* Full screen adjustments */
+        @media (orientation: landscape) {
+            #video-feed {
+                width: 45vw;
+                height: 35vh;
+            }
+        }
+
+        @media (orientation: portrait) {
+            #video-feed {
+                width: 80vw;
+                height: 50vh;
+            }
         }
     </style>
 </head>
 <body>
     <a-scene>
-        <a-camera fov="60" look-controls="enabled: false"></a-camera>
+        <a-camera fov="45" look-controls="enabled: false"></a-camera>
         <a-light type="ambient" color="#ffffff"></a-light>
         <a-light type="directional" position="-1 2 1" intensity="1" color="#ffffff"></a-light>
         
@@ -33,14 +82,17 @@
         
         <a-assets>
             <img id="myImage" src="./WebD_texture.jpg"/>
-           
             <video id="video-texture" autoplay playsinline></video>
         </a-assets>
     </a-scene>
 
     <script>
-        // const socket = io('http://localhost:8000');
-        const socket = io('https://image-target.dbaego.com');
+        // const socket = io('http://localhost:8086');
+        // const socket = io('https://image-target-ar./web-dimension.com', { withCredentials: true});
+        const socket = io("wss://image-target-ar.web-dimension.com", {
+            transports: ["websocket"],
+        });
+
         const videoElement = document.getElementById('video-texture');
         const box = document.getElementById('tracked-box');
 
@@ -54,7 +106,7 @@
         // Access the user's camera and show the video feed
         navigator.mediaDevices.getUserMedia({ 
             video:{ 
-            facingMode: { ideal: "environment" },  // Try to use the back camera
+            facingMode: { ideal: "environment" },
             width: 640, 
             height: 480 
         } })
@@ -126,14 +178,11 @@
             dataTimeout = setTimeout(() => {
                 box.setAttribute('visible', false);
                 lastPosition = { x: null, y: null, z: null };  // Reset last position when hiding
-            }, 300);  // 1 seconds timeout to hide the box
+            }, 300);  // 1 second timeout to hide the box
         });
-        
 
         // Start the video stream when the window loads
         window.onload = () => socket.emit('start_stream');
     </script>
 </body>
 </html>
-
-image-target.dbaego.com
