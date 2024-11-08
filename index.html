@@ -18,53 +18,19 @@
             width: 100vw; 
             height: 100vh; 
         }
-        #video-feed {
-            position: absolute;
-            bottom: 5%;
-            right: 5%;
-            width: 40vw; 
-            height: 30vh;
-            object-fit: cover;
-        }
-
-        /* Responsive styles */
-        @media (max-width: 768px) {
-            #video-feed { 
-                width: 90vw; 
-                height: 40vh; 
-                bottom: 2%; 
-                right: 2%; 
-            }
-        }
-        
-        @media (min-width: 769px) and (max-width: 1024px) {
-            #video-feed { 
-                width: 60vw; 
-                height: 35vh; 
-            }
-        }
-
-        @media (max-width: 480px) {
-            #video-feed { 
-                width: 95vw;
-                height: 45vh;
-                bottom: 2%;
-                right: 2%;
-            }
-        }
-
-        /* Full screen adjustments */
+        /* Full-screen adjustments */
         @media (orientation: landscape) {
             #video-feed {
-                width: 45vw;
-                height: 35vh;
+                width: 100vw;
+                height: 100vh;
+                object-fit: cover;
             }
         }
-
         @media (orientation: portrait) {
             #video-feed {
-                width: 80vw;
-                height: 50vh;
+                width: 100vw;
+                height: 100vh;
+                object-fit: cover;
             }
         }
     </style>
@@ -77,110 +43,118 @@
         
         <a-box id="tracked-box" visible="false" position="0 0 0" rotation="0 45 0" scale="1.5 1.5 1.5" material="src: #myImage; color: #FFF"></a-box>
         
-        <a-plane id="video-feed" width="16" height="9" position="0 3 -5" material="src: #video-texture;"></a-plane>
-        
         <a-assets>
             <img id="myImage" src="./WebD_texture.jpg"/>
-            <video id="video-texture" autoplay playsinline></video>
         </a-assets>
     </a-scene>
 
     <script>
-       const socket = io('http://localhost:8086');
-const videoElement = document.getElementById('video-texture');
-const box = document.getElementById('tracked-box');
+        const socket = io('http://localhost:8086');
+        const box = document.getElementById('tracked-box');
+        const videoElement = document.createElement('video'); // Create video element dynamically
+        videoElement.id = 'video-feed'; // Set the id for the video element
+        videoElement.autoplay = true;
+        videoElement.playsInline = true;
+        videoElement.style.position = "absolute"; // Position video feed absolutely
+        videoElement.style.top = "0"; // Align video to the top
+        videoElement.style.left = "0"; // Align video to the left
+        videoElement.style.width = "100vw"; // Full screen width
+        videoElement.style.height = "100vh"; // Full screen height
+        videoElement.style.objectFit = "cover"; // Ensure the video covers the screen
+        document.body.appendChild(videoElement); // Add the video element to the body
 
-let lastPosition = { x: 0, y: 0, z: 0 };
-let lastUpdateTime = Date.now();
-let zValues = [];
-const zWindowMin = -5;
-const zWindowMax = 0;
-let dataTimeout = null;
+        let lastPosition = { x: 0, y: 0, z: 0 };
+        let lastUpdateTime = Date.now();
+        let zValues = [];
+        const zWindowMin = -5;
+        const zWindowMax = 0;
+        let dataTimeout = null;
 
-window.onload = function() {
-    // Socket connection handling
-    socket.on('connect', function() {
-        console.log('Connected to backend');
-        socket.emit('start_stream');  // Start the video stream on page load
-    });
+        window.onload = function() {
+            // Socket connection handling
+            socket.on('connect', function() {
+                console.log('Connected to backend');
+                socket.emit('start_stream');  // Start the video stream on page load
+            });
 
-    socket.on('connect_error', (err) => {
-        console.error('Socket connection failed:', err);
-        alert('Connection to backend failed. Please try again later.');
-    });
+            socket.on('connect_error', (err) => {
+                console.error('Socket connection failed:', err);
+                alert('Connection to backend failed. Please try again later.');
+            });
 
-    socket.on('disconnect', () => {
-        console.log('Disconnected from backend');
-    });
+            socket.on('disconnect', () => {
+                console.log('Disconnected from backend');
+            });
 
-    // Access the user's camera
-    navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: { ideal: "environment" }, width: 640, height: 480 }
-    })
-    .then(stream => {
-        videoElement.srcObject = stream;
-        videoElement.play();
-        requestAnimationFrame(sendFrame);  // Send the video frames to the backend
-    })
-    .catch(error => {
-        console.error("Error accessing camera: ", error);
-    });
-};
+            // Access the user's camera
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: { ideal: "environment" }, width: 640, height: 480 }
+            })
+            .then(stream => {
+                videoElement.srcObject = stream;
+                videoElement.play();
+                requestAnimationFrame(sendFrame);  // Send the video frames to the backend
+            })
+            .catch(error => {
+                console.error("Error accessing camera: ", error);
+            });
+        };
 
-// Capture and send video frame
-function sendFrame() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 480;    
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-    const frame = canvas.toDataURL('image/jpeg', 0.6);
-    socket.emit('video_frame', { frame });  // Send frame to backend
-    setTimeout(() => requestAnimationFrame(sendFrame), 100);  // Send every 100ms
-}
-
-// Receive updated coordinates for the box from the backend
-socket.on('update_coordinates', function(data) {
-    const frameWidth = 640;
-    const frameHeight = 480;
-
-    if (data.x !== null && data.y !== null && data.z !== null) {
-        const x = (data.x / frameWidth) * 10 - 5;
-        const y = -(data.y / frameHeight) * 10 + 8;
-        let z = (data.z * -1) / 10;
-
-        if (z < zWindowMin || z > zWindowMax) {
-            z = getAverageZ();
-        } else {
-            zValues.push(z);
-            if (zValues.length > 5) zValues.shift();
+        // Capture and send video frame
+        function sendFrame() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;    
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            const frame = canvas.toDataURL('image/jpeg', 0.6);
+            socket.emit('video_frame', { frame });  // Send frame to backend
+            setTimeout(() => requestAnimationFrame(sendFrame), 100);  // Send every 100ms
         }
 
-        console.log(`Position: ${data.x} ${data.y} ${data.z}`);
+        // Receive updated coordinates for the box from the backend
+        socket.on('update_coordinates', function(data) {
+            const frameWidth = 640;
+            const frameHeight = 480;
 
-        if (z > 65 && z < 10) {
-            box.setAttribute('visible', false);
-        } else {
-            lastPosition = { x, y, z };
-            box.setAttribute('position', `${x} ${y} ${z}`);
-            box.setAttribute('visible', true);
+            if (data.x !== null && data.y !== null && data.z !== null) {
+                const x = (data.x / frameWidth) * 10 - 5;
+                const y = -(data.y / frameHeight) * 10 + 8;
+                let z = (data.z * -1) / 10;
+
+                if (z < zWindowMin || z > zWindowMax) {
+                    z = getAverageZ();
+                } else {
+                    zValues.push(z);
+                    if (zValues.length > 5) zValues.shift();
+                }
+
+                console.log(`Position: ${data.x} ${data.y} ${data.z}`);
+
+
+                if (z > 65 && z < 10) {
+                    box.setAttribute('visible', false);
+                } else {
+                    lastPosition = { x, y, z };
+                    box.setAttribute('position', `${x} ${y} ${z}`);
+                    box.setAttribute('visible', true);
+                }
+
+                clearTimeout(dataTimeout);
+                lastUpdateTime = Date.now();
+            }
+
+            // Hide box after 1 second of inactivity
+            dataTimeout = setTimeout(() => {
+                box.setAttribute('visible', false);
+                lastPosition = { x: null, y: null, z: null };
+            }, 300);  // 1 second timeout to hide the box
+        });
+
+        // Calculate the average z-value for smoothing
+        function getAverageZ() {
+            return zValues.length ? zValues.reduce((a, b) => a + b, 0) / zValues.length : 0;
         }
-
-        clearTimeout(dataTimeout);
-        lastUpdateTime = Date.now();
-    }
-
-    // Hide box after 1 second of inactivity
-    dataTimeout = setTimeout(() => {
-        box.setAttribute('visible', false);
-        lastPosition = { x: null, y: null, z: null };
-    }, 300);  // 1 second timeout to hide the box
-});
-
-// Calculate the average z-value for smoothing
-function getAverageZ() {
-    return zValues.length ? zValues.reduce((a, b) => a + b, 0) / zValues.length : 0;
-}
     </script>
 </body>
 </html>
