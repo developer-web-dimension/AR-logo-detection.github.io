@@ -23,17 +23,15 @@
             bottom: 5%;
             right: 5%;
             width: 40vw; 
-            height: auto;
-            aspect-ratio: 16/9;
-            object-fit: cover;
+            height: auto; /* Maintain aspect ratio */
+            object-fit: cover; /* Maintain the video aspect ratio */
         }
 
         /* Responsive styles */
         @media (max-width: 768px) {
             #video-feed { 
                 width: 90vw; 
-                height: auto;
-                aspect-ratio: 16/9;
+                height: auto; /* Maintain aspect ratio */
                 bottom: 2%; 
                 right: 2%; 
             }
@@ -42,16 +40,14 @@
         @media (min-width: 769px) and (max-width: 1024px) {
             #video-feed { 
                 width: 60vw; 
-                height: auto;
-                aspect-ratio: 16/9;
+                height: auto; /* Maintain aspect ratio */
             }
         }
 
         @media (max-width: 480px) {
             #video-feed { 
                 width: 95vw;
-                height: auto;
-                aspect-ratio: 16/9;
+                height: auto; /* Maintain aspect ratio */
                 bottom: 2%;
                 right: 2%;
             }
@@ -61,16 +57,14 @@
         @media (orientation: landscape) {
             #video-feed {
                 width: 45vw;
-                height: auto;
-                aspect-ratio: 16/9;
+                height: auto; /* Maintain aspect ratio */
             }
         }
 
         @media (orientation: portrait) {
             #video-feed {
                 width: 80vw;
-                height: auto;
-                aspect-ratio: 16/9;
+                height: auto; /* Maintain aspect ratio */
             }
         }
     </style>
@@ -83,7 +77,8 @@
         
         <a-box id="tracked-box" visible="false" position="0 0 0" rotation="0 45 0" scale="1.5 1.5 1.5" material="src: #myImage; color: #FFF"></a-box>
         
-        <a-plane id="video-feed-plane" width="16" height="9" position="0 3 -5" material="src: #video-texture;"></a-plane>
+        <!-- Adjusting the a-plane for better aspect ratio handling -->
+        <a-plane id="video-feed-plane" width="16" height="9" position="0 3 -5" material="src: #video-texture; shader: flat;"></a-plane>
         
         <a-assets>
             <img id="myImage" src="./WebD_texture.jpg"/>
@@ -92,8 +87,9 @@
     </a-scene>
 
     <script>
-        const socket = io("wss://image-target-ar.web-dimension.com", {
-            transports: ["websocket"],
+        const socket = io("https://image-target-ar.web-dimension.com", {
+            transports: ["websocket", "polling"],
+            withCredentials: true  // In case CORS is an issue
         });
 
         const videoElement = document.getElementById('video-texture');
@@ -104,14 +100,15 @@
         let zValues = [];
         const zWindowMin = -5;
         const zWindowMax = 0;
-        let dataTimeout = null;
+        let dataTimeout = null; // Timeout variable to hide the box
 
+        // Access the user's camera and show the video feed
         navigator.mediaDevices.getUserMedia({ 
             video:{ 
-            facingMode: { ideal: "environment" },
-            width: 640, 
-            height: 480 
-        } })
+                facingMode: { ideal: "environment" }, 
+                width: 640, 
+                height: 480 
+            } })
             .then(stream => {
                 videoElement.srcObject = stream;
                 videoElement.play();
@@ -119,6 +116,7 @@
             })
             .catch(error => console.error("Error accessing camera: ", error));
 
+        // Capture the video frame and send it to the backend every 250ms
         function sendFrame() {
             const canvas = document.createElement('canvas');
             canvas.width = 640;
@@ -130,10 +128,12 @@
             setTimeout(() => requestAnimationFrame(sendFrame), 150);
         }
 
+        // Calculate the average z-value for smoothing
         function getAverageZ() {
             return zValues.length ? zValues.reduce((a, b) => a + b, 0) / zValues.length : 0;
         }
 
+        // Receive updated coordinates for the box from the backend
         socket.on('update_coordinates', function(data) {
             const frameWidth = 640;
             const frameHeight = 480;
@@ -143,6 +143,7 @@
                 const y = -(data.y / frameHeight) * 10 + 8;
                 let z = (data.z * -1) / 10;
 
+                // Smoothing z-value if it's outside the window
                 if (z < zWindowMin || z > zWindowMax) {
                     z = getAverageZ();
                 } else {
@@ -158,17 +159,26 @@
                     box.setAttribute('visible', true);
                 }
 
+                // Update the box position
+                lastPosition = { x, y, z };
+                box.setAttribute('position', `${x} ${y} ${z}`);
+                box.setAttribute('visible', true);
+
+                // Clear the timeout when new valid coordinates are received
                 clearTimeout(dataTimeout);
 
+                // Update lastUpdateTime
                 lastUpdateTime = Date.now();
             }
 
+            // Start the timeout to hide the box if no updates are received for a long time
             dataTimeout = setTimeout(() => {
                 box.setAttribute('visible', false);
-                lastPosition = { x: null, y: null, z: null };
-            }, 300);
+                lastPosition = { x: null, y: null, z: null };  // Reset last position when hiding
+            }, 300);  // 1 second timeout to hide the box
         });
 
+        // Start the video stream when the window loads
         window.onload = () => socket.emit('start_stream');
     </script>
 </body>
