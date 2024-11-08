@@ -8,21 +8,21 @@
     <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
 
     <style>
-        html, body {
-            margin: 0;
-            height: 100%;
-            width: 100%;
-            overflow: hidden;
+        html, body { 
+            margin: 0; 
+            height: 100%; 
+            width: 100%; 
+            overflow: hidden; 
         }
-        a-scene {
-            width: 100vw;
-            height: 100vh;
+        a-scene { 
+            width: 100vw; 
+            height: 100vh; 
         }
         #video-feed {
             position: absolute;
             bottom: 5%;
             right: 5%;
-            width: 40vw;
+            width: 40vw; 
             height: 30vh;
             object-fit: cover;
         }
@@ -30,17 +30,17 @@
         /* Responsive styles */
         @media (max-width: 768px) {
             #video-feed { 
-                width: 90vw;
-                height: 40vh;
-                bottom: 2%;
-                right: 2%;
+                width: 90vw; 
+                height: 40vh; 
+                bottom: 2%; 
+                right: 2%; 
             }
         }
         
         @media (min-width: 769px) and (max-width: 1024px) {
             #video-feed { 
-                width: 60vw;
-                height: 35vh;
+                width: 60vw; 
+                height: 35vh; 
             }
         }
 
@@ -86,91 +86,101 @@
     </a-scene>
 
     <script>
-        const socket = io('http://localhost:8086');
-        socket.on('connect', function() {
-            console.log('Connected to backend');
-        });
+       const socket = io('http://localhost:8086');
+const videoElement = document.getElementById('video-texture');
+const box = document.getElementById('tracked-box');
 
-        const videoElement = document.getElementById('video-texture');
-        const box = document.getElementById('tracked-box');
+let lastPosition = { x: 0, y: 0, z: 0 };
+let lastUpdateTime = Date.now();
+let zValues = [];
+const zWindowMin = -5;
+const zWindowMax = 0;
+let dataTimeout = null;
 
-        let lastPosition = { x: 0, y: 0, z: 0 };
-        let lastUpdateTime = Date.now();
-        let zValues = [];
-        const zWindowMin = -5;
-        const zWindowMax = 0;
-        let dataTimeout = null;
+window.onload = function() {
+    // Socket connection handling
+    socket.on('connect', function() {
+        console.log('Connected to backend');
+        socket.emit('start_stream');  // Start the video stream on page load
+    });
 
-        // Access the user's camera and show the video feed
-        function startCamera() {
-            navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { ideal: "environment" } }
-            }).then(function(stream) {
-                videoElement.srcObject = stream;
-                videoElement.play();
-                requestAnimationFrame(sendFrame); // Send the video frames to the backend
-            }).catch(function(err) {
-                alert("Camera access is required for this app to work.");
-                console.error("Error accessing camera: ", err);
-            });
+    socket.on('connect_error', (err) => {
+        console.error('Socket connection failed:', err);
+        alert('Connection to backend failed. Please try again later.');
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Disconnected from backend');
+    });
+
+    // Access the user's camera
+    navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: { ideal: "environment" }, width: 640, height: 480 }
+    })
+    .then(stream => {
+        videoElement.srcObject = stream;
+        videoElement.play();
+        requestAnimationFrame(sendFrame);  // Send the video frames to the backend
+    })
+    .catch(error => {
+        console.error("Error accessing camera: ", error);
+    });
+};
+
+// Capture and send video frame
+function sendFrame() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;    
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    const frame = canvas.toDataURL('image/jpeg', 0.6);
+    socket.emit('video_frame', { frame });  // Send frame to backend
+    setTimeout(() => requestAnimationFrame(sendFrame), 100);  // Send every 100ms
+}
+
+// Receive updated coordinates for the box from the backend
+socket.on('update_coordinates', function(data) {
+    const frameWidth = 640;
+    const frameHeight = 480;
+
+    if (data.x !== null && data.y !== null && data.z !== null) {
+        const x = (data.x / frameWidth) * 10 - 5;
+        const y = -(data.y / frameHeight) * 10 + 8;
+        let z = (data.z * -1) / 10;
+
+        if (z < zWindowMin || z > zWindowMax) {
+            z = getAverageZ();
+        } else {
+            zValues.push(z);
+            if (zValues.length > 5) zValues.shift();
         }
 
-        startCamera();
+        console.log(`Position: ${data.x} ${data.y} ${data.z}`);
 
-        // Capture the video frame and send it to the backend every 250ms
-        function sendFrame() {
-            const canvas = document.createElement('canvas');
-            canvas.width = videoElement.videoWidth;
-            canvas.height = videoElement.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-            const frame = canvas.toDataURL('image/jpeg', 0.6);
-            socket.emit('video_frame', { frame });  // Send frame to backend
-            setTimeout(() => requestAnimationFrame(sendFrame), 100);
+        if (z > 65 && z < 10) {
+            box.setAttribute('visible', false);
+        } else {
+            lastPosition = { x, y, z };
+            box.setAttribute('position', `${x} ${y} ${z}`);
+            box.setAttribute('visible', true);
         }
 
-        // Calculate the average z-value for smoothing
-        function getAverageZ() {
-            return zValues.length ? zValues.reduce((a, b) => a + b, 0) / zValues.length : 0;
-        }
+        clearTimeout(dataTimeout);
+        lastUpdateTime = Date.now();
+    }
 
-        // Receive updated coordinates for the box from the backend
-        socket.on('update_coordinates', function(data) {
-            const frameWidth = 640;
-            const frameHeight = 480;
+    // Hide box after 1 second of inactivity
+    dataTimeout = setTimeout(() => {
+        box.setAttribute('visible', false);
+        lastPosition = { x: null, y: null, z: null };
+    }, 300);  // 1 second timeout to hide the box
+});
 
-            if (data.x !== null && data.y !== null && data.z !== null) {
-                const x = (data.x / frameWidth) * 10 - 5;
-                const y = -(data.y / frameHeight) * 10 + 8;
-                let z = (data.z * -1) / 10;
-
-                if (z < zWindowMin || z > zWindowMax) {
-                    z = getAverageZ();
-                } else {
-                    zValues.push(z);
-                    if (zValues.length > 5) zValues.shift();
-                }
-
-                if (z > 65 && z < 10) {
-                    box.setAttribute('visible', false);
-                } else {
-                    lastPosition = { x, y, z };
-                    box.setAttribute('position', `${x} ${y} ${z}`);
-                    box.setAttribute('visible', true);
-                }
-
-                clearTimeout(dataTimeout);
-                lastUpdateTime = Date.now();
-            }
-
-            dataTimeout = setTimeout(() => {
-                box.setAttribute('visible', false);
-                lastPosition = { x: null, y: null, z: null };  // Reset last position when hiding
-            }, 300);  // 1 second timeout to hide the box
-        });
-
-        // Start the video stream when the window loads
-        window.onload = startCamera;
+// Calculate the average z-value for smoothing
+function getAverageZ() {
+    return zValues.length ? zValues.reduce((a, b) => a + b, 0) / zValues.length : 0;
+}
     </script>
 </body>
 </html>
