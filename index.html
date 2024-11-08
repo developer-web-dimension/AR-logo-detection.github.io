@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AR Object Tracking with A-Frame</title>
     <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-    <!-- <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script> -->
     <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
 
     <style>
@@ -24,7 +23,8 @@
             bottom: 5%;
             right: 5%;
             width: 40vw; 
-            height: 30vh;
+            height: auto;
+            aspect-ratio: 16/9;
             object-fit: cover;
         }
 
@@ -32,7 +32,8 @@
         @media (max-width: 768px) {
             #video-feed { 
                 width: 90vw; 
-                height: 40vh; 
+                height: auto;
+                aspect-ratio: 16/9;
                 bottom: 2%; 
                 right: 2%; 
             }
@@ -41,14 +42,16 @@
         @media (min-width: 769px) and (max-width: 1024px) {
             #video-feed { 
                 width: 60vw; 
-                height: 35vh; 
+                height: auto;
+                aspect-ratio: 16/9;
             }
         }
 
         @media (max-width: 480px) {
             #video-feed { 
                 width: 95vw;
-                height: 45vh;
+                height: auto;
+                aspect-ratio: 16/9;
                 bottom: 2%;
                 right: 2%;
             }
@@ -58,14 +61,16 @@
         @media (orientation: landscape) {
             #video-feed {
                 width: 45vw;
-                height: 35vh;
+                height: auto;
+                aspect-ratio: 16/9;
             }
         }
 
         @media (orientation: portrait) {
             #video-feed {
                 width: 80vw;
-                height: 50vh;
+                height: auto;
+                aspect-ratio: 16/9;
             }
         }
     </style>
@@ -87,8 +92,6 @@
     </a-scene>
 
     <script>
-        // const socket = io('http://localhost:8086');
-        // const socket = io('https://image-target-ar./web-dimension.com', { withCredentials: true});
         const socket = io("wss://image-target-ar.web-dimension.com", {
             transports: ["websocket"],
         });
@@ -101,9 +104,8 @@
         let zValues = [];
         const zWindowMin = -5;
         const zWindowMax = 0;
-        let dataTimeout = null; // Timeout variable to hide the box
+        let dataTimeout = null;
 
-        // Access the user's camera and show the video feed
         navigator.mediaDevices.getUserMedia({ 
             video:{ 
             facingMode: { ideal: "environment" },
@@ -117,7 +119,6 @@
             })
             .catch(error => console.error("Error accessing camera: ", error));
 
-        // Capture the video frame and send it to the backend every 250ms
         function sendFrame() {
             const canvas = document.createElement('canvas');
             canvas.width = 640;
@@ -129,12 +130,10 @@
             setTimeout(() => requestAnimationFrame(sendFrame), 150);
         }
 
-        // Calculate the average z-value for smoothing
         function getAverageZ() {
             return zValues.length ? zValues.reduce((a, b) => a + b, 0) / zValues.length : 0;
         }
 
-        // Receive updated coordinates for the box from the backend
         socket.on('update_coordinates', function(data) {
             const frameWidth = 640;
             const frameHeight = 480;
@@ -144,44 +143,32 @@
                 const y = -(data.y / frameHeight) * 10 + 8;
                 let z = (data.z * -1) / 10;
 
-                // Smoothing z-value if it's outside the window
                 if (z < zWindowMin || z > zWindowMax) {
                     z = getAverageZ();
                 } else {
                     zValues.push(z);
                     if (zValues.length > 5) zValues.shift();
                 }
-                console.log(`Position: ${data.x} ${data.y} ${data.z}`);
 
-                if (z > 65 && z< 10) {
+                if (z > 65 && z < 10) {
                     box.setAttribute('visible', false);
                 } else {
-                    console.log(`Position: ${data.x} ${data.y} ${data.z}`);
                     lastPosition = { x, y, z };
                     box.setAttribute('position', `${x} ${y} ${z}`);
                     box.setAttribute('visible', true);
                 }
 
-                // Update the box position
-                lastPosition = { x, y, z };
-                box.setAttribute('position', `${x} ${y} ${z}`);
-                box.setAttribute('visible', true);
-
-                // Clear the timeout when new valid coordinates are received
                 clearTimeout(dataTimeout);
 
-                // Update lastUpdateTime
                 lastUpdateTime = Date.now();
             }
 
-            // Start the timeout to hide the box if no updates are received for a long time
             dataTimeout = setTimeout(() => {
                 box.setAttribute('visible', false);
-                lastPosition = { x: null, y: null, z: null };  // Reset last position when hiding
-            }, 300);  // 1 second timeout to hide the box
+                lastPosition = { x: null, y: null, z: null };
+            }, 300);
         });
 
-        // Start the video stream when the window loads
         window.onload = () => socket.emit('start_stream');
     </script>
 </body>
